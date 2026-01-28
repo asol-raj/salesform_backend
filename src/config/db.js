@@ -37,6 +37,39 @@ export async function runMysql(query, values = []) {
   }
 }
 
+/* 
+  CFC FROM CONFIG
+*/
+
+const cfcFormConfig = {
+  host: process.env.MYSQL_HOSTNAME,
+  user: process.env.MYSQL_USERNAME,
+  password: process.env.MYSQL_PASSWROD,
+  database: process.env.MYSQL_DATABASE,
+  port: 3306,
+  connectionLimit: 10,
+  waitForConnections: true,
+};
+
+const cfcFormPool = mysql.createPool(cfcFormConfig);
+
+/**
+ * Execute a MySQL query using mysql2 promise pool
+ *
+ * @param {string} query
+ * @param {Array} values
+ * @returns {Promise<Array>} rows
+ */
+export async function formQuery(query, values = []) {
+  try {
+    const [rows] = await mysqlPool.query(query, values);
+    return rows;
+  } catch (error) {
+    console.error('❌ MySQL query error:', error.stack);
+    throw error;
+  }
+}
+
 /* =======================
    MSSQL CONFIG & POOL
 ======================= */
@@ -91,6 +124,7 @@ export async function executeProcedure(procedureName, params = {}) {
 ======================= */
 
 export {
-  mysqlPool,
+  mysqlPool, // cfc api
+  cfcFormPool,  // form api
   mssqlPoolPromise,
 };
