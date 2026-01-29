@@ -2,6 +2,7 @@
 
 import express from "express";
 import puppeteer from "puppeteer";
+import { generatePdfFromUrl } from "../utils/pdfGenerator.js";
 import { uploadPdfToDrive } from "../utils/googleDrive.js";
 
 // import { saveInvoice, getInvoice } from "../cache/invoiceCache.js";
@@ -27,8 +28,7 @@ function getInvoice(slug) {
 }
 
 router.post("/save", (req, res) => {
-    const { slug, form } = req.body;
-    log(31, form)
+    const { slug, form } = req.body; //log(form);
 
     if (!slug || !form) {
         return res.status(400).json({ error: "Invalid payload" });
@@ -40,11 +40,23 @@ router.post("/save", (req, res) => {
     res.json({ ok: true });
 });
 
+router.get("/:slug", (req, res) => {
+    log(43, req.params.slug)
+    const invoice = getInvoice(req.params.slug);
+    log(invoice?.sellerNames);
+    // output  sellerNames: [ { name: 'Billy Terry', rv_code: 'BJT', storeCode= 's2' } ],
+    if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+    }
+    res.json(invoice);
+});
+
 /* ==================================================
    GENERATE INVOICE PDF
    - Uses Puppeteer to render frontend invoice page
    - MUST be defined before `/:slug`
 ================================================== */
+// full route /api/invoice/pdf/:slug
 router.get('/pdf/:slug', async (req, res) => {
     const { slug } = req.params; console.log(slug);
     let browser;
@@ -69,7 +81,8 @@ router.get('/pdf/:slug', async (req, res) => {
             deviceScaleFactor: 2,
         });
 
-        const url = `http://${client_ip}:${client_port}/invoice/${slug}`;
+        // const url = `http://${client_ip}:${client_port}/invoice/${slug}`;
+        const url = `http://${client_ip}:${client_port}/internal-invoice/${slug}`;
         // const url = 'http://localhost:5000/';
 
         // Load page and wait until everything is ready
@@ -112,7 +125,7 @@ router.get('/pdf/:slug', async (req, res) => {
         uploadPdfToDrive(
             pdfBuffer,
             `${slug}.pdf`,
-            process.env.FOLDER_ID_2
+            process.env.TEST_100
         ).catch(err => {
             console.error("Drive upload failed:", err.message);
         });
@@ -139,14 +152,111 @@ router.get('/pdf/:slug', async (req, res) => {
     }
 });
 
-router.get("/:slug", (req, res) => {
-    // log(req.params.slug)
-    const invoice = getInvoice(req.params.slug); log('invoice', invoice?.sellerNames)
+router.get("/pdf/test/:slug", async (req, res) => {
+    const { slug } = req.params;
+
+    const invoice = getInvoice(slug);
     if (!invoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+        return res.status(404).json({ error: "Invoice not found in cache" });
     }
 
-    res.json(invoice);
+    const storeCode = invoice?.sellerNames?.[0]?.storeCode;
+
+    let targetFolderId;
+    switch (storeCode) {
+        case "s1":
+            targetFolderId = process.env.FOLDER_100;
+            break;
+        case "s2":
+            targetFolderId = process.env.FOLDER_200;
+            break;
+        default:
+            targetFolderId = process.env.FOLDER_FALLBACK;
+    }
+
+    if (!targetFolderId) {
+        return res.status(500).json({
+            error: "Drive folder not configured"
+        });
+    }
+
+    try {
+        const url = `http://${client_ip}:${client_port}/internal-invoice/${slug}`;
+
+        // ✅ ONE line PDF generation
+        const pdfBuffer = await generatePdfFromUrl(url);
+
+        // ✅ Upload
+        uploadPdfToDrive(
+            pdfBuffer,
+            `${slug}.pdf`,
+            targetFolderId
+        ).catch(err => {
+            console.error("Drive upload failed:", err.message);
+        });
+
+        // ✅ Respond
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${slug}.pdf"`
+        );
+        res.send(pdfBuffer);
+
+    } catch (err) {
+        console.error("PDF generation failed:", err);
+        res.status(500).json({
+            ok: false,
+            message: "Failed to generate invoice PDF",
+        });
+    }
 });
 
+
+
+
+
 export default router;
+
+/* 
+
+const handleCommit = async () => {
+    try {
+      // ✅ STEP 1: Save invoice data to backend cache (REQUIRED)
+      const saveRes = await fetch("/api/invoice/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          form, // full invoice form object
+        }),
+      });
+
+      if (!saveRes.ok) {
+        const err = await saveRes.json();
+        alert(err.error || "Failed to save invoice for PDF");
+        return;
+      }
+
+      // 🔵 STEP 2 (OPTIONAL): Vendor override warning
+      const overriddenItems = form.items.filter(
+        (i) =>
+          i.vendorOverride &&
+          (i.item_status === "N" || i.item_status === "S")
+      );
+
+      if (overriddenItems.length > 0) {
+        console.warn("⚠ Vendor override used:", overriddenItems);
+      }
+      
+      // ✅ STEP 3: ALWAYS open PDF
+      window.open(/api/invoice/pdf/${slug}, "_blank");
+
+
+    } catch (err) {
+      alert(err.message || "Commit failed.");
+      console.error(err);
+    }
+  };
+
+*/
