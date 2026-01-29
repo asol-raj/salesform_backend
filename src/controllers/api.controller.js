@@ -27,9 +27,9 @@ export async function searchEmployee(req, res) {
     const q = (req.query.q || '').trim(); //log(q);
     let sql = `
       select 
-        name, rv_code
-      from employees
-      where is_active = true and name like '%${q}%';
+        e.name, e.rv_code, s.name as store
+      from employees e join store s on s.id = e.store
+      where e.is_active = true and e.name like '%${q}%';
     `;
     let rows = await runMysql(sql, [q]);
     res.json({ ok: true, count: rows.length, data: rows });
@@ -49,10 +49,11 @@ export async function searchEmployee(req, res) {
   example http://localhost:5000/api/inventory/search/469365
 
   http://localhost:5000/api/inventory/search?q=itemid
-  example http://localhost:5000/api/inventory/search?q=1127886
-  
+  example http://localhost:5000/api/inventory/search?q=1127886  
 */
-export async function seachItems(req, res) {
+
+// old query with local mysql tables
+export async function seachItems_(req, res) {
   try {
     const q = (req.query.q || '').trim();
     const v = (req.query.v || '').trim();
@@ -128,7 +129,7 @@ FROM InvMasterReport a
 ORDER BY a.[item_desc];
 */
 
-export async function seachItems_(req, res) {
+export async function seachItems(req, res) {
   try {
     const q = (req.query.q || '').trim();
     const v = (req.query.v || '').trim();
